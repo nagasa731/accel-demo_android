@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>加速度検知テスト v3 (Android対応版)</title>
+    <title>加速度検知テスト v4 (Z軸対応版)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; color: #333; transition: background-color 0.1s ease; }
@@ -26,31 +26,25 @@
 </head>
 <body>
 
-    <h1>スマホ加速度検知 v3</h1>
-    <p>「開始」ボタンを押して、スマホを上に素早く振ってください。</p>
+    <h1>スマホ加速度検知 v4</h1>
+    <p>「開始」ボタンを押し、画面を上(並行)に向けたまま、スマホを上に素早く振ってください。</p>
 
     <button id="permissionButton">検知を開始</button>
-
     <div id="status">許可待ち...</div>
-    <div id="data">Y加速度: 0.00</div>
-    <div id="result"></div>
-
+    <div id="data">Z加速度: 0.00</div> <div id="result"></div>
     <hr>
-    
     <h2>設定とログ</h2>
-
     <div class="setting-container">
         <label for="thresholdSlider">検知しきい値 (振りの強さ): </label>
         <input type="range" id="thresholdSlider" min="5" max="40" step="1" value="15">
         <span id="thresholdValue">15.0</span>
     </div>
-
     <h3>検知ログ (最新が上)</h3>
-    <ul id="logList">
-        </ul>
+    <ul id="logList"></ul>
+
 
     <script>
-        // DOM要素を取得 (v2と同じ)
+        // DOM要素を取得 (v3と同じ)
         const permissionButton = document.getElementById('permissionButton');
         const statusDiv = document.getElementById('status');
         const dataDiv = document.getElementById('data');
@@ -59,27 +53,24 @@
         const thresholdValueSpan = document.getElementById('thresholdValue');
         const logList = document.getElementById('logList');
 
-        // 検知のしきい値 (振りの強さ)
+        // しきい値
         let THRESHOLD = parseFloat(thresholdSlider.value);
         let isDetecting = false;
         
-        // ▼▼▼ Android対応のための追加変数 ▼▼▼
-        // 重力加速度 (約9.8) を推定するための変数
-        let gravityY = 0;
-        // ローパスフィルタの係数 (0に近いほどゆっくり変化)
+        // ▼▼▼ YをZに変更 ▼▼▼
+        // 重力加速度 (Z軸) を推定するための変数
+        let gravityZ = 0; 
         const ALPHA = 0.8; 
-        
-        // 重力込み(G)か、重力抜き(A)のどちらのモードで動作しているか
         let sensorMode = 'Unknown'; 
         // ▲▲▲
 
-        // スライダーが操作されたら、しきい値(THRESHOLD)を更新
+        // スライダーの処理 (v3と同じ)
         thresholdSlider.addEventListener('input', () => {
             THRESHOLD = parseFloat(thresholdSlider.value);
             thresholdValueSpan.textContent = THRESHOLD.toFixed(1);
         });
 
-        // 1. 許可ボタンのクリックイベント (v2と同じ)
+        // 許可ボタンの処理 (v3と同じ)
         permissionButton.addEventListener('click', () => {
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 DeviceMotionEvent.requestPermission()
@@ -98,42 +89,44 @@
             }
         });
 
-        // 2. 加速度センサーの監視を開始する関数 (v2と同じ)
+        // 監視開始 (v3と同じ)
         function startMotionDetection() {
             permissionButton.style.display = 'none';
-            statusDiv.textContent = '監視中... スマホを上に振ってください';
+            // 説明文をZ軸用に変更
+            statusDiv.textContent = '監視中... 画面を上に向けて上に振ってください'; 
             window.addEventListener('devicemotion', handleMotionEvent);
         }
 
-        // 3. 'devicemotion' イベントを処理する関数 (▼▼▼ ここを大きく修正 ▼▼▼)
+        // 3. 'devicemotion' イベント処理 (▼▼▼ Y軸からZ軸へ変更 ▼▼▼)
         function handleMotionEvent(event) {
             
-            let y_accel_raw = 0; // センサーから取得した生のY軸加速度
-            let y_accel = 0;     // 計算後の「振りの強さ」
+            let z_accel_raw = 0; // Y -> Z
+            let z_accel = 0;     // Y -> Z
 
             // --- センサーデータの取得とモード判定 ---
             
-            // (A) iPhoneパターン: event.acceleration (重力除く) が利用可能な場合
-            if (event.acceleration && typeof event.acceleration.y === 'number') {
+            // (A) iPhoneパターン: event.acceleration (重力除く) の「z」が利用可能な場合
+            if (event.acceleration && typeof event.acceleration.z === 'number') { // Y -> Z
                 
                 if (sensorMode === 'Unknown') sensorMode = 'A (重力除く)';
                 
-                y_accel_raw = event.acceleration.y;
-                y_accel = y_accel_raw; // 重力除くデータなので、そのまま「振りの強さ」として使う
+                z_accel_raw = event.acceleration.z; // Y -> Z
+                z_accel = z_accel_raw; // 重力除くデータなので、そのまま「振りの強さ」として使う
             
-            // (B) Androidパターン: event.accelerationIncludingGravity (重力込み) しか使えない場合
-            } else if (event.accelerationIncludingGravity && typeof event.accelerationIncludingGravity.y === 'number') {
+            // (B) Androidパターン: event.accelerationIncludingGravity (重力込み) の「z」しか使えない場合
+            } else if (event.accelerationIncludingGravity && typeof event.accelerationIncludingGravity.z === 'number') { // Y -> Z
                 
                 if (sensorMode === 'Unknown') sensorMode = 'G (重力込み)';
 
-                y_accel_raw = event.accelerationIncludingGravity.y;
+                z_accel_raw = event.accelerationIncludingGravity.z; // Y -> Z
                 
                 // --- ローパスフィルタで重力成分を推定 ---
-                // y_accel_raw (重力 + 振りの強さ) のうち、ゆっくり動く成分(gravityY)を計算
-                gravityY = ALPHA * gravityY + (1 - ALPHA) * y_accel_raw;
+                // z_accel_raw (重力 + 振りの強さ) のうち、ゆっくり動く成分(gravityZ)を計算
+                // 画面を上に(並行に)向けて静止している時、z_accel_raw は約 9.8 になる
+                gravityZ = ALPHA * gravityZ + (1 - ALPHA) * z_accel_raw; // Y -> Z
                 
                 // 「振りの強さ」 = 「全体の加速度」 - 「重力成分」
-                y_accel = y_accel_raw - gravityY;
+                z_accel = z_accel_raw - gravityZ; // Y -> Z
 
             } else {
                 // どちらも取れない場合
@@ -143,16 +136,15 @@
 
             // --- データ表示 ---
             // 画面には、計算後の「振りの強さ」を表示
-            dataDiv.textContent = `Y加速度 : ${y_accel.toFixed(2)}`;
+            dataDiv.textContent = `Z加速度 : ${z_accel.toFixed(2)}`; // Y -> Z
             
-            // ステータス欄に、動作モードを表示 (初回のみ)
-            if (statusDiv.textContent === '監視中... スマホを上に振ってください') {
+            if (statusDiv.textContent.startsWith('監視中...')) {
                 statusDiv.textContent = `監視中 (モード: ${sensorMode})`;
             }
 
             // --- 検知判定 ---
-            // 計算後の「振りの強さ」(y_accel) が スライダーのしきい値(THRESHOLD) を超えたか
-            if (y_accel > THRESHOLD && !isDetecting) {
+            // 計算後の「振りの強さ」(z_accel) が スライダーのしきい値(THRESHOLD) を超えたか
+            if (z_accel > THRESHOLD && !isDetecting) { // Y -> Z
                 
                 isDetecting = true;
                 resultDiv.textContent = '検知！';
@@ -163,13 +155,13 @@
                 const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
                 
                 const logEntry = document.createElement('li');
-                // ログには「振りの強さ」と「生のY軸の値」を両方記録
-                logEntry.textContent = `[${timeString}] 検知: ${y_accel.toFixed(2)} (Raw: ${y_accel_raw.toFixed(2)}, Mode: ${sensorMode})`;
+                // ログにZ軸の値を記録
+                logEntry.textContent = `[${timeString}] 検知: ${z_accel.toFixed(2)} (Raw: ${z_accel_raw.toFixed(2)}, Mode: ${sensorMode})`; // Y -> Z
                 
                 logList.prepend(logEntry);
                 // ---
 
-                console.log(`検知: ${y_accel.toFixed(2)} m/s^2`);
+                console.log(`検知: ${z_accel.toFixed(2)} m/s^2`); // Y -> Z
 
                 // 1秒後に表示をリセット
                 setTimeout(() => {
