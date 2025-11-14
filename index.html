@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>加速度検知テスト</title>
+    <title>加速度検知テスト v2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <style>
         /* 基本的なスタイル */
@@ -12,7 +12,6 @@
             padding: 20px;
             background-color: #f0f0f0;
             color: #333;
-            /* 画面がガタガタ動かないように */
             transition: background-color 0.1s ease;
         }
         h1 {
@@ -28,7 +27,7 @@
             cursor: pointer;
             border-radius: 10px;
             border: none;
-            background-color: #007aff; /* iOS風の青 */
+            background-color: #007aff;
             color: white;
             font-weight: bold;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
@@ -39,7 +38,7 @@
             font-size: 0.9rem;
             color: #555;
             margin-top: 20px;
-            min-height: 1.2em; /* 高さを確保してレイアウト崩れを防ぐ */
+            min-height: 1.2em;
         }
         #data {
             font-size: 1.8rem;
@@ -52,20 +51,72 @@
         #result {
             font-size: 3rem;
             font-weight: 800;
-            color: #d90000; /* 目立つ赤 */
+            color: #d90000;
             min-height: 1.5em;
             margin-top: 10px;
         }
-
-        /* 検知時に画面をフラッシュさせるためのCSSクラス */
+        /* 検知時に画面をフラッシュさせる */
         body.detected {
-            background-color: #ffcccc; /* 薄い赤 */
+            background-color: #ffcccc;
         }
+
+        /* ▼▼▼ 追加CSS ▼▼▼ */
+        hr {
+            border: 0;
+            border-top: 1px solid #ccc;
+            margin: 30px 10px;
+        }
+        h2 {
+            font-size: 1.2rem;
+        }
+
+        /* しきい値スライダー */
+        .setting-container {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        #thresholdSlider {
+            width: 70%;
+            margin: 10px 0;
+        }
+        #thresholdValue {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #007aff; /* ボタンと同じ青 */
+            display: inline-block;
+            width: 40px; /* 幅を固定してガタツキ防止 */
+        }
+
+        /* ログリスト */
+        #logList {
+            list-style-type: none; /* 点を消す */
+            padding: 0;
+            margin-top: 10px;
+            max-height: 200px; /* 高さが大きくなりすぎないようにスクロール */
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            background-color: #fff;
+            border-radius: 8px;
+            text-align: left; /* ログは左揃え */
+        }
+        #logList li {
+            padding: 8px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+        /* 交互に色を変える */
+        #logList li:nth-child(odd) {
+            background-color: #f9f9f9;
+        }
+        /* ▲▲▲ 追加CSS ▲▲▲ */
     </style>
 </head>
 <body>
 
-    <h1>スマホ加速度検知</h1>
+    <h1>スマホ加速度検知 v2</h1>
     <p>「開始」ボタンを押して、スマホを上に素早く振ってください。</p>
 
     <button id="permissionButton">検知を開始</button>
@@ -74,6 +125,19 @@
     <div id="data">Y加速度: 0.00</div>
     <div id="result"></div>
 
+    <hr>
+    
+    <h2>設定とログ</h2>
+
+    <div class="setting-container">
+        <label for="thresholdSlider">検知しきい値 (m/s²): </label>
+        <input type="range" id="thresholdSlider" min="5" max="40" step="1" value="15">
+        <span id="thresholdValue">15.0</span>
+    </div>
+
+    <h3>検知ログ (最新が上)</h3>
+    <ul id="logList">
+        </ul>
     <script>
         // DOM要素を取得
         const permissionButton = document.getElementById('permissionButton');
@@ -81,85 +145,97 @@
         const dataDiv = document.getElementById('data');
         const resultDiv = document.getElementById('result');
 
-        // 検知のしきい値（この値より大きい加速度を「急激」とみなす）
-        // m/s^2 (重力加速度は約9.8)
-        // 経験的に15〜20くらいが「強い振り」になります。お好みで調整してください。
-        const THRESHOLD = 15.0;
+        // ▼▼▼ 追加 ▼▼▼
+        const thresholdSlider = document.getElementById('thresholdSlider');
+        const thresholdValueSpan = document.getElementById('thresholdValue');
+        const logList = document.getElementById('logList');
+        // ▲▲▲ 追加 ▲▲▲
+
+        // 検知のしきい値（スライダーの初期値から取得）
+        let THRESHOLD = parseFloat(thresholdSlider.value);
 
         // 検知中かどうかを管理するフラグ（連続検知防止用）
         let isDetecting = false;
 
+        // ▼▼▼ 追加 ▼▼▼
+        // スライダーが操作されたら、しきい値(THRESHOLD)を更新
+        thresholdSlider.addEventListener('input', () => {
+            THRESHOLD = parseFloat(thresholdSlider.value);
+            // 画面の表示も更新 (小数点以下1桁)
+            thresholdValueSpan.textContent = THRESHOLD.toFixed(1);
+        });
+        // ▲▲▲ 追加 ▲▲▲
+
         // 1. 許可ボタンのクリックイベント
         permissionButton.addEventListener('click', () => {
-            // (A) iOS 13以降の場合: DeviceMotionEvent.requestPermission() が存在する
+            // (A) iOS 13以降の場合
             if (typeof DeviceMotionEvent.requestPermission === 'function') {
                 
                 DeviceMotionEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === 'granted') {
-                            // 許可された場合
                             startMotionDetection();
                         } else {
-                            // 許可されなかった場合
                             statusDiv.textContent = '加速度センサーの使用が許可されませんでした。';
                         }
                     })
                     .catch(error => {
-                        // エラー処理
                         statusDiv.textContent = '許可エラー: ' + error.message;
                         console.error(error);
                     });
 
             } else {
-                // (B) Android または 古いiOSの場合: requestPermissionは不要
+                // (B) Android または 古いiOSの場合
                 startMotionDetection();
             }
         });
 
         // 2. 加速度センサーの監視を開始する関数
         function startMotionDetection() {
-            // 許可ボタンを非表示にする
             permissionButton.style.display = 'none';
             statusDiv.textContent = '監視中... スマホを上に振ってください';
-
-            // 'devicemotion' イベントリスナーを追加
             window.addEventListener('devicemotion', handleMotionEvent);
         }
 
         // 3. 'devicemotion' イベントを処理する関数
         function handleMotionEvent(event) {
-            // 重力加速度を除いた「ユーザーによる加速度」を取得
-            // (event.accelerationIncludingGravity は重力込み)
             const acceleration = event.acceleration;
 
             if (!acceleration || typeof acceleration.y !== 'number') {
-                // データが取得できない場合は何もしない
                 return;
             }
 
-            // Y軸（スマホの上下方向）の加速度を取得
             const y_accel = acceleration.y;
-
-            // データを画面に表示 (小数点以下2桁)
             dataDiv.textContent = `Y加速度: ${y_accel.toFixed(2)}`;
 
             // しきい値を超え、かつ直前の検知からクールダウン中の場合でなければ
             if (y_accel > THRESHOLD && !isDetecting) {
-                // 検知フラグを立てる
-                isDetecting = true;
                 
-                // 検知したことを表示
+                isDetecting = true;
                 resultDiv.textContent = '検知！';
-                document.body.classList.add('detected'); // 画面フラッシュ
+                document.body.classList.add('detected');
+
+                // ▼▼▼ ログ追加処理 ▼▼▼
+                const now = new Date();
+                // 時:分:秒 形式にフォーマット
+                const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                
+                // 新しいログエントリ（li要素）を作成
+                const logEntry = document.createElement('li');
+                logEntry.textContent = `[${timeString}] 検知: ${y_accel.toFixed(2)} m/s² (しきい値: ${THRESHOLD.toFixed(1)})`;
+                
+                // リストの先頭に追加 (prepend)
+                logList.prepend(logEntry);
+                // ▲▲▲ ログ追加処理 ▲▲▲
 
                 console.log(`検知: ${y_accel.toFixed(2)} m/s^2`);
 
-                // 1秒後に表示をリセット（連続で「検知！」と表示されないように）
+                // 1秒後に表示をリセット
                 setTimeout(() => {
                     resultDiv.textContent = '';
                     document.body.classList.remove('detected');
-                    isDetecting = false; // フラグを下ろす
-                }, 1000); // 1秒 (1000ms)
+                    isDetecting = false;
+                }, 1000);
             }
         }
     </script>
