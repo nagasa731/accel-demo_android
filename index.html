@@ -124,18 +124,24 @@
     function requestPermissionIfNeeded(){
       if (typeof DeviceMotionEvent === 'undefined') {
         statusEl.textContent = 'DeviceMotionEventが未対応のブラウザです。';
-        return Promise.reject();
+        return Promise.reject(new Error('DeviceMotion未対応'));
       }
+      // iOS 13+ requires explicit permission; Android/desktop will skip
       if (typeof DeviceMotionEvent.requestPermission === 'function') {
-        // iOS 13+ 必須
-        return DeviceMotionEvent.requestPermission().then(state => {
-          if (state === 'granted') {
+        setPill(permPill, '許可リクエスト中', 'warn');
+        // Some iOS versions gate the prompt behind Orientation as well — request both, but ignore failures
+        const askMotion = DeviceMotionEvent.requestPermission().catch(err => { throw err; });
+        const askOrient = (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')
+          ? DeviceOrientationEvent.requestPermission().catch(()=>{})
+          : Promise.resolve();
+        return Promise.allSettled([askMotion, askOrient]).then(results => {
+          const motion = results[0];
+          if (motion.status === 'fulfilled' && motion.value === 'granted') {
             setPill(permPill, '許可済み', 'ok');
             return true;
-          } else {
-            setPill(permPill, '拒否', 'warn');
-            throw new Error('権限が許可されませんでした');
           }
+          setPill(permPill, '拒否', 'warn');
+          throw new Error('iOSでモーションアクセスが拒否されました');
         });
       } else {
         setPill(permPill, '不要（許可済み）', 'ok');
@@ -144,6 +150,17 @@
     }
 
     function startDeviceMotion(){
+      try {
+        window.removeEventListener('devicemotion', onMotion);
+        window.addEventListener('devicemotion', onMotion, { passive: true });
+        sourcePillText = 'DeviceMotion';
+        setPill(runPill, '計測中 ('+sourcePillText+')', 'ok');
+        statusEl.textContent = '上に素早く振り上げてみてください。';
+      } catch (e) {
+        addLog('DeviceMotion開始失敗: ' + e.message);
+      }
+    }
+(){
       window.addEventListener('devicemotion', onMotion, { passive: true });
       sourcePillText = 'DeviceMotion';
       setPill(runPill, '計測中 ('+sourcePillText+')', 'ok');
